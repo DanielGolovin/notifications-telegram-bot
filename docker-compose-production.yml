@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  myapp:
+    image: ${DOCKER_USERNAME}/${DOCKER_REPO}:${DOCKER_TAG}
+    ports:
+      - ${SERVER_PORT}:${SERVER_PORT}
+    volumes:
+      - ./chats-id-map.json:/chats-id-map.json
+    environment:
+      - SERVER_PORT=${SERVER_PORT}
+      - TELEGRAM_BOT_API_TOKEN=${TELEGRAM_BOT_API_TOKEN}

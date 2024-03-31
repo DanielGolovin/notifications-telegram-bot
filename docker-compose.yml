@@ -1,0 +1,16 @@
+version: "3"
+services:
+  app:
+    image: notifications-bot
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - ${SERVER_PORT}:${SERVER_PORT}
+    volumes:
+      - ./:/app
+      - ./data:/data
+    environment:
+      - SERVER_PORT=${SERVER_PORT}
+      - TELEGRAM_BOT_API_TOKEN=${TELEGRAM_BOT_API_TOKEN}
+
