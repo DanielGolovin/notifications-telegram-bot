@@ -6,7 +6,8 @@ services:
     ports:
       - ${SERVER_PORT}:${SERVER_PORT}
     volumes:
-      - ./chats-id-map.json:/chats-id-map.json
+      - ./volumes:/volumes
     environment:
       - SERVER_PORT=${SERVER_PORT}
       - TELEGRAM_BOT_API_TOKEN=${TELEGRAM_BOT_API_TOKEN}
+      - NOTIFICATION_SECRET=${NOTIFICATION_SECRET}

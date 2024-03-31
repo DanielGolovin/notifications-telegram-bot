@@ -9,8 +9,8 @@ services:
       - ${SERVER_PORT}:${SERVER_PORT}
     volumes:
       - ./:/app
-      - ./data:/data
+      - ./volumes:/volumes
     environment:
       - SERVER_PORT=${SERVER_PORT}
       - TELEGRAM_BOT_API_TOKEN=${TELEGRAM_BOT_API_TOKEN}
-
+      - NOTIFICATION_SECRET=${NOTIFICATION_SECRET}

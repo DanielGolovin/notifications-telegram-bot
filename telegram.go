@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 
@@ -63,8 +64,12 @@ func addChat(chatsIdMap map[int64]bool, chatID int64) {
 	saveChatsIdMap(chatsIdMap)
 }
 
+func getChatsIdMapJsonPath() string {
+	return fmt.Sprintf("%s/chats-id-map.json", volumesDir)
+}
+
 func saveChatsIdMap(chatsIdMap map[int64]bool) {
-	file, err := os.Create("/data/chats-id-map.json")
+	file, err := os.Create(getChatsIdMapJsonPath())
 	if err != nil {
 		log.Fatalf("Error creating file: %v", err)
 	}
@@ -87,15 +92,12 @@ func saveChatsIdMap(chatsIdMap map[int64]bool) {
 func loadChatsIdMap() map[int64]bool {
 	var chatsIdMap = make(map[int64]bool)
 
-	file, err := os.Open("/data/chats-id-map.json")
-	if err == os.ErrNotExist {
-		log.Println("File not found, creating a new one")
-		saveChatsIdMap(chatsIdMap)
-		return chatsIdMap
-	}
+	file, err := os.Open(getChatsIdMapJsonPath())
 
 	if err != nil {
-		log.Fatalf("Error opening file: %v", err)
+		log.Println("File not found, creating a new one")
+		saveChatsIdMap(chatsIdMap)
+		return loadChatsIdMap()
 	}
 
 	defer file.Close()
