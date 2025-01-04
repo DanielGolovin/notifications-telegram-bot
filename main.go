@@ -5,26 +5,43 @@ import (
 	"os"
 )
 
-var volumesDir = "/volumes"
-
 func main() {
-	ensureVolumesDirExists()
+	botToken := getBotToken()
 
-	bot, err := setupBot()
+	db := NewDB(getDBDir())
+	bot := NewBot(botToken, &db, isPrivate())
+	go bot.Start()
 	log.Println("Bot is running")
-
-	if err != nil {
-		panic(err)
-	}
 
 	startWebhookServer(bot)
 }
 
-func ensureVolumesDirExists() {
-	err := os.MkdirAll(volumesDir, os.ModePerm)
-	if err != nil {
-		log.Fatalf("Error creating volumes directory: %v", err)
+func getDBDir() string {
+	volumesDir := os.Getenv("DB_FOLDER")
+
+	if volumesDir == "" {
+		log.Fatalf("DB_FOLDER environment variable not set")
 	}
 
-	log.Printf("Volumes directory created at %s", volumesDir)
+	return volumesDir
+}
+
+func getBotToken() string {
+	botToken := os.Getenv("TELEGRAM_BOT_API_TOKEN")
+
+	if botToken == "" {
+		log.Fatalln("TELEGRAM_BOT_API_TOKEN is not set")
+	}
+
+	return botToken
+}
+
+func isPrivate() bool {
+	private := os.Getenv("IS_PRIVATE")
+
+	if private == "" {
+		return false
+	}
+
+	return true
 }
