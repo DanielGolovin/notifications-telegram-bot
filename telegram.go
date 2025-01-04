@@ -1,138 +1,99 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-func setupUpdateConfig() tgbotapi.UpdateConfig {
+type NotificationBot struct {
+	bot     *tgbotapi.BotAPI
+	db      *DBInterface
+	private bool
+}
+
+type DBInterface interface {
+	AddChat(chatID int64)
+	RemoveChat(chatID int64)
+	GetChats() []int64
+	GetWhiteList() map[int64]bool
+}
+
+func NewBot(token string, db *DBInterface, private bool) *NotificationBot {
+	bot := &NotificationBot{}
+
+	_bot, err := tgbotapi.NewBotAPI(token)
+
+	if err != nil {
+		log.Fatalf("Error creating bot: %v", err)
+	}
+
+	bot.bot = _bot
+	bot.db = db
+	bot.private = private
+
+	return bot
+}
+
+func (bot *NotificationBot) Start() {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 30
 
-	return updateConfig
-}
-
-func setupUpdateChannel(bot *tgbotapi.BotAPI) tgbotapi.UpdatesChannel {
-	updateConfig := setupUpdateConfig()
-	updatesChan := bot.GetUpdatesChan(updateConfig)
-	chatsIdMap := loadChatsIdMap()
+	updatesChan := bot.bot.GetUpdatesChan(updateConfig)
 
 	for update := range updatesChan {
-		handleUpdate(bot, update, chatsIdMap)
-	}
-
-	return updatesChan
-}
-
-func handleUpdate(bot *tgbotapi.BotAPI, update tgbotapi.Update, chatsIdMap map[int64]bool) {
-	chatID := update.Message.Chat.ID
-	addChat(chatsIdMap, chatID)
-}
-
-func setupBot() (*tgbotapi.BotAPI, error) {
-	botToken := getBotToken()
-	bot, err := tgbotapi.NewBotAPI(botToken)
-
-	if err != nil {
-		return nil, err
-	}
-
-	go setupUpdateChannel(bot)
-
-	return bot, nil
-}
-
-func getChats() []int64 {
-	chatsIdMap := loadChatsIdMap()
-
-	var chats []int64
-
-	for chatID := range chatsIdMap {
-		chats = append(chats, chatID)
-	}
-
-	return chats
-}
-
-func addChat(chatsIdMap map[int64]bool, chatID int64) {
-	chatsIdMap[chatID] = true
-
-	saveChatsIdMap(chatsIdMap)
-}
-
-func getChatsIdMapJsonPath() string {
-	return fmt.Sprintf("%s/chats-id-map.json", volumesDir)
-}
-
-func saveChatsIdMap(chatsIdMap map[int64]bool) {
-	file, err := os.Create(getChatsIdMapJsonPath())
-	if err != nil {
-		log.Fatalf("Error creating file: %v", err)
-	}
-
-	defer file.Close()
-
-	jsonData, err := json.Marshal(chatsIdMap)
-
-	if err != nil {
-		log.Fatalf("Error stringifying JSON: %v", err)
-	}
-
-	_, err = file.Write(jsonData)
-
-	if err != nil {
-		log.Fatalf("Error writing to file: %v", err)
+		bot.handleUpdate(update)
 	}
 }
 
-func loadChatsIdMap() map[int64]bool {
-	var chatsIdMap = make(map[int64]bool)
-
-	file, err := os.Open(getChatsIdMapJsonPath())
-
-	if err != nil {
-		log.Println("File not found, creating a new one")
-		saveChatsIdMap(chatsIdMap)
-		return loadChatsIdMap()
-	}
-
-	defer file.Close()
-
-	jsonData := make([]byte, 1024)
-	n, err := file.Read(jsonData)
-
-	if err != nil {
-		log.Fatalf("Error reading file: %v", err)
-	}
-
-	err = json.Unmarshal(jsonData[:n], &chatsIdMap)
-
-	if err != nil {
-		log.Fatalf("Error unmarshalling JSON: %v", err)
-	}
-
-	return chatsIdMap
+func (bot *NotificationBot) handleUpdate(update tgbotapi.Update) {
+	(*bot.db).AddChat(update.Message.Chat.ID)
+	bot.sendMessage(update.Message.Chat.ID, "Your user_id is: "+fmt.Sprint(update.Message.From.ID))
 }
 
-func getBotToken() string {
-	botToken := os.Getenv("TELEGRAM_BOT_API_TOKEN")
+func (bot *NotificationBot) getChatsToNotify() []int64 {
+	if bot.private {
+		whiteList := (*bot.db).GetWhiteList()
+		allowedChats := make([]int64, 0, len(whiteList))
+		chats := (*bot.db).GetChats()
 
-	if botToken == "" {
-		log.Fatalln("TELEGRAM_BOT_API_TOKEN is not set")
+		for _, chatID := range chats {
+			if whiteList[chatID] {
+				allowedChats = append(allowedChats, chatID)
+			} else {
+				(*bot.db).RemoveChat(chatID)
+				bot.sendMessage(chatID, "You are not allowed to receive notifications. Please contact the bot owner.")
+			}
+		}
+
+		return allowedChats
 	}
 
-	return botToken
+	return (*bot.db).GetChats()
 }
 
-func broadcastMessage(bot *tgbotapi.BotAPI, message string) {
-	chats := getChats()
+func (bot *NotificationBot) sendMessage(chatID int64, message string) {
+	msg := tgbotapi.NewMessage(chatID, message)
+	bot.bot.Send(msg)
+}
+
+func (bot *NotificationBot) BroadcastMessage(message string) {
+	chats := bot.getChatsToNotify()
 
 	for _, chatID := range chats {
-		msg := tgbotapi.NewMessage(chatID, message)
-		bot.Send(msg)
+		bot.sendMessage(chatID, message)
+	}
+}
+
+func (bot *NotificationBot) BroadcastFile(fileName string, fileData *[]byte) {
+	chats := (*bot.db).GetChats()
+
+	for _, chatID := range chats {
+		msg := tgbotapi.NewDocument(chatID, tgbotapi.FileBytes{
+			Name:  fileName,
+			Bytes: *fileData,
+		})
+		bot.bot.Send(msg)
 	}
 }

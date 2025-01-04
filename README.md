@@ -8,9 +8,12 @@ example of POST request:
 {
   "data": {
     "message": "Hello World!"
-  },
-  "secret": "my_secret"
+  }
 }
 ```
 
+X-Secret header is required to authenticate the request.
+
 Secret is a string that you can set in environment variable `NOTIFICATION_SECRET`
+
+TODO: rest of the README

@@ -3,27 +3,27 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
-
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type NotificationRequestData struct {
-	Data   map[string]interface{} `json:"data"`
-	Secret string                 `json:"secret"`
+	Data map[string]interface{} `json:"data"`
 }
 
-func startWebhookServer(bot *tgbotapi.BotAPI) {
+func startWebhookServer(bot *NotificationBot) {
 	mux := http.NewServeMux()
 
-	notificationHandler := createHandlerWithBot(bot)
+	notificationHandler := createNotificationHandler(bot)
+	fileNotificationHandler := createFileNotificationHandler(bot)
 
 	mux.HandleFunc("POST /notify", notificationHandler)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	mux.HandleFunc("POST /notify/file", fileNotificationHandler)
 
 	log.Printf("Starting server on port %s", getServerPort())
 	err := http.ListenAndServe(fmt.Sprintf(":%s", getServerPort()), mux)
@@ -44,6 +44,7 @@ func getServerPort() string {
 }
 
 func parseNotificationRequest(r *http.Request) (*NotificationRequestData, error) {
+	defer r.Body.Close()
 	var data NotificationRequestData
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
@@ -57,22 +58,30 @@ func validateSecret(secret string) bool {
 	return secret == getSecret()
 }
 
-func createHandlerWithBot(bot *tgbotapi.BotAPI) http.HandlerFunc {
+func createNotificationHandler(bot *NotificationBot) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		handleNotificationRequest(w, r, bot)
 	}
 }
 
-func handleNotificationRequest(w http.ResponseWriter, r *http.Request, bot *tgbotapi.BotAPI) {
+func createFileNotificationHandler(bot *NotificationBot) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handleFileNotificationRequest(w, r, bot)
+	}
+}
+
+func handleNotificationRequest(w http.ResponseWriter, r *http.Request, bot *NotificationBot) {
+	secret := r.Header.Get("X-Secret")
+
+	if !validateSecret(secret) {
+		http.Error(w, "Invalid secret", http.StatusUnauthorized)
+		return
+	}
+
 	data, err := parseNotificationRequest(r)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if !validateSecret(data.Secret) {
-		http.Error(w, "Invalid secret", http.StatusUnauthorized)
 		return
 	}
 
@@ -83,7 +92,42 @@ func handleNotificationRequest(w http.ResponseWriter, r *http.Request, bot *tgbo
 
 	stringData := string(jsonData)
 
-	broadcastMessage(bot, stringData)
+	log.Printf("Broadcasting message: %s", stringData)
+
+	bot.BroadcastMessage(stringData)
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func parseFileNotificationRequest(r *http.Request) (*[]byte, error) {
+	log.Printf("Received file notification request")
+	defer r.Body.Close()
+	fileData, err := io.ReadAll(r.Body)
+
+	if err != nil {
+		log.Fatalf("Error reading file: %v", err)
+		return nil, err
+	}
+
+	return &fileData, nil
+}
+
+func handleFileNotificationRequest(w http.ResponseWriter, r *http.Request, bot *NotificationBot) {
+	data, err := parseFileNotificationRequest(r)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Broadcasting file: %v", data)
+
+	fileName := r.Header.Get("X-File-Name")
+	if fileName == "" {
+		fileName = "file"
+	}
+
+	bot.BroadcastFile(fileName, data)
 
 	w.WriteHeader(http.StatusOK)
 }
